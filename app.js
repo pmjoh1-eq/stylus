@@ -1,14 +1,29 @@
-
-/* global pdfjsLib */
+import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js";
+  "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
 
 const pdfInput = document.getElementById("pdfInput");
 const pagesEl = document.getElementById("pages");
 const saveBtn = document.getElementById("saveBtn");
 const clearPageBtn = document.getElementById("clearPageBtn");
 const penOnlyEl = document.getElementById("penOnly");
+const statusEl = document.getElementById("status");
+
+function setStatus(msg) {
+  statusEl.textContent = msg;
+  console.log("[status]", msg);
+}
+
+window.addEventListener("error", (e) => {
+  console.error("Window error:", e.error || e.message);
+  setStatus("Error — open console (F12).");
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("Unhandled promise rejection:", e.reason);
+  setStatus("Error — open console (F12).");
+});
 
 let pdfFile = null;
 let pdfDoc = null;
@@ -67,13 +82,10 @@ function appendStrokeToSvg(svg, stroke) {
   // geometry
   path.setAttribute("d", pointsToPathD(stroke.points));
 
-  // timestamps (per point)
-  // Store as comma-separated deltas from tStart (smaller than absolute times)
+  // timestamps: store start time + per-point delta ms
   const deltas = stroke.points.map(p => Math.max(0, Math.round(p.t - stroke.tStart)));
   path.setAttribute("data-tstart", String(Math.round(stroke.tStart)));
   path.setAttribute("data-dt", deltas.join(","));
-
-  // optional: preserve an id
   path.setAttribute("data-id", stroke.id);
 
   svg.appendChild(path);
@@ -92,7 +104,6 @@ function attachInking(svg, model) {
   const strokeWidth = 2.5;
 
   svg.addEventListener("pointerdown", (e) => {
-    // Pen-only option
     if (penOnlyEl.checked && e.pointerType !== "pen") return;
 
     svg.setPointerCapture(e.pointerId);
@@ -110,7 +121,7 @@ function attachInking(svg, model) {
       tEnd: t
     };
 
-    // create a live path element
+    // live path
     appendStrokeToSvg(svg, currentStroke);
     e.preventDefault();
   });
@@ -125,7 +136,6 @@ function attachInking(svg, model) {
     currentStroke.points.push({ x: p.x, y: p.y, t });
     currentStroke.tEnd = t;
 
-    // update the last path (live)
     const livePath = svg.lastElementChild;
     if (livePath && livePath.tagName.toLowerCase() === "path") {
       livePath.setAttribute("d", pointsToPathD(currentStroke.points));
@@ -141,7 +151,6 @@ function attachInking(svg, model) {
     if (!drawing || !currentStroke) return;
     drawing = false;
 
-    // commit to model
     model.strokes.push(currentStroke);
     currentStroke = null;
   }
@@ -155,12 +164,15 @@ async function renderPdf(arrayBuffer) {
   pageModels = [];
   activePageIndex = 0;
 
+  setStatus("Opening PDF…");
   pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  setStatus(`Rendering ${pdfDoc.numPages} page(s)…`);
 
   for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
     const page = await pdfDoc.getPage(pageNumber);
 
-    // scale for readability (you can tweak)
+    // scale for readability (change to 1.0 if you want A4-ish size)
     const viewport = page.getViewport({ scale: 1.6 });
 
     const pageWrap = document.createElement("section");
@@ -201,49 +213,49 @@ async function renderPdf(arrayBuffer) {
     pageModels.push(model);
     attachInking(svg, model);
 
-    // set active page on click (for "clear current page")
     stage.addEventListener("click", () => {
       activePageIndex = pageNumber - 1;
       clearPageBtn.disabled = false;
+      setStatus(`Active page: ${pageNumber}`);
     });
   }
 
   saveBtn.disabled = false;
   clearPageBtn.disabled = false;
+  setStatus(`Ready — rendered ${pdfDoc.numPages} page(s).`);
 }
 
 function svgStringForPage(model, pdfName) {
-  // Clone ink layer and embed minimal metadata
   const svg = model.svgEl.cloneNode(true);
 
   svg.setAttribute("data-source-pdf", pdfName);
   svg.setAttribute("data-page", String(model.pageNumber));
   svg.setAttribute("data-exported-at", new Date().toISOString());
 
-  // Ensure it’s rebuilt from model (not relying on DOM state)
+  // Ensure export matches model strokes
   rebuildSvg(svg, model.strokes);
 
-  const serializer = new XMLSerializer();
-  return serializer.serializeToString(svg);
+  return new XMLSerializer().serializeToString(svg);
 }
 
 async function saveSvgsToFolder() {
   if (!pdfFile || !pageModels.length) return;
 
   if (!("showDirectoryPicker" in window)) {
-    alert("Your browser doesn't support saving to folders (File System Access API). Use Chrome/Edge.");
+    alert("Folder saving needs Chrome/Edge (File System Access API).");
     return;
   }
 
   const pdfName = baseName(pdfFile.name);
 
-  // User chooses a directory (cannot auto-detect “same folder as PDF”)
+  // User chooses a directory (browser security prevents auto “same folder as PDF”)
+  setStatus("Choose an output folder…");
   const rootDir = await window.showDirectoryPicker({ mode: "readwrite" });
 
-  // Create subfolder named after PDF
   const outDir = await rootDir.getDirectoryHandle(pdfName, { create: true });
 
-  // Save each page SVG
+  setStatus("Saving SVGs…");
+
   for (const model of pageModels) {
     const svgText = svgStringForPage(model, pdfFile.name);
     const filename = `page-${pad3(model.pageNumber)}.svg`;
@@ -254,7 +266,6 @@ async function saveSvgsToFolder() {
     await writable.close();
   }
 
-  // Optional manifest (helps playback tooling later)
   const manifest = {
     sourcePdf: pdfFile.name,
     exportedAt: new Date().toISOString(),
@@ -272,6 +283,7 @@ async function saveSvgsToFolder() {
   await mw.write(JSON.stringify(manifest, null, 2));
   await mw.close();
 
+  setStatus(`Saved ${pageModels.length} SVG(s) to folder “${pdfName}”.`);
   alert(`Saved ${pageModels.length} SVG(s) into folder “${pdfName}”.`);
 }
 
@@ -279,9 +291,16 @@ pdfInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
 
-  pdfFile = file;
-  const buf = await file.arrayBuffer();
-  await renderPdf(buf);
+  try {
+    pdfFile = file;
+    setStatus(`Loading ${file.name}…`);
+    const buf = await file.arrayBuffer();
+    await renderPdf(buf);
+  } catch (err) {
+    console.error(err);
+    setStatus("Failed to load PDF — open console (F12).");
+    alert("PDF load failed. Open DevTools (F12) → Console and paste the error here.");
+  }
 });
 
 saveBtn.addEventListener("click", saveSvgsToFolder);
@@ -291,4 +310,7 @@ clearPageBtn.addEventListener("click", () => {
   if (!m) return;
   m.strokes = [];
   rebuildSvg(m.svgEl, m.strokes);
+  setStatus(`Cleared page ${m.pageNumber}.`);
 });
+
+setStatus("Ready. Choose a PDF…");
