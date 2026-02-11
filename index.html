@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PDF Ink (SVG)</title>
   <link rel="stylesheet" href="styles.css" />
-  <!-- pdf.js (CDN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js"></script>
+  <link rel="icon" href="data:," />
 </head>
+
 <body>
   <header class="topbar">
     <div class="left">
@@ -19,6 +19,7 @@
     </div>
 
     <div class="right">
+      <span id="status" class="status">Idle</span>
       <button id="clearPageBtn" disabled>Clear current page</button>
       <button id="saveBtn" disabled>Save SVGs…</button>
     </div>
@@ -27,9 +28,10 @@
   <main id="pages"></main>
 
   <footer class="hint">
-    Tip: Use a stylus. Zoom your browser if needed; ink stays aligned with the rendered page size.
+    Tip: Use a stylus. Ink is stored as SVG paths with per-point timestamps.
   </footer>
 
-  <script src="app.js"></script>
+  <!-- IMPORTANT: module script -->
+  <script type="module" src="app.js"></script>
 </body>
 </html>
