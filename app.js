@@ -250,6 +250,17 @@ function svgStringForPage(model, pdfName) {
   return new XMLSerializer().serializeToString(svg);
 }
 
+function undoActivePage() {
+  const m = pageModels[activePageIndex];
+  if (!m) return;
+  if (!m.strokes.length) return;
+
+  m.strokes.pop();
+  rebuildSvg(m.svgEl, m.strokes);
+  setStatus(`Undo on page ${m.pageNumber}.`);
+}
+
+
 async function saveSvgsToFolder() {
   if (!pdfFile || !pageModels.length) return;
 
