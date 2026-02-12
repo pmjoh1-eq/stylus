@@ -337,3 +337,14 @@ clearPageBtn.addEventListener("click", () => {
 });
 
 setStatus("Ready. Choose a PDF…");
+
+
+window.addEventListener("keydown", (e) => {
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
+  const mod = isMac ? e.metaKey : e.ctrlKey;
+
+  if (mod && (e.key === "z" || e.key === "Z")) {
+    e.preventDefault();
+    undoActivePage();
+  }
+});
