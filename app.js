@@ -103,8 +103,14 @@ function attachInking(svg, model) {
   const strokeColor = "#0b57d0";
   const strokeWidth = 2.5;
 
+  // Keep default browser panning/scrolling for touch/finger
+  // Only disable it for pen while drawing (we do that via preventDefault below)
+  // Also: ensure svg has touch-action: auto in CSS if you want full scrolling.
+  // (We’ll keep touch-action: none BUT only for pen events; see note below.)
+
   svg.addEventListener("pointerdown", (e) => {
-    if (penOnlyEl.checked && e.pointerType !== "pen") return;
+    // Only stylus draws
+    if (e.pointerType !== "pen") return;
 
     svg.setPointerCapture(e.pointerId);
     drawing = true;
@@ -123,12 +129,14 @@ function attachInking(svg, model) {
 
     // live path
     appendStrokeToSvg(svg, currentStroke);
+
+    // prevent palm/pen gestures from scrolling while drawing
     e.preventDefault();
-  });
+  }, { passive: false });
 
   svg.addEventListener("pointermove", (e) => {
     if (!drawing || !currentStroke) return;
-    if (penOnlyEl.checked && e.pointerType !== "pen") return;
+    if (e.pointerType !== "pen") return;
 
     const t = nowMs();
     const p = getLocalPoint(svg, e.clientX, e.clientY);
@@ -145,12 +153,15 @@ function attachInking(svg, model) {
     }
 
     e.preventDefault();
-  });
+  }, { passive: false });
 
-  function endStroke() {
+  function endStroke(e) {
     if (!drawing || !currentStroke) return;
+    if (e && e.pointerType !== "pen") return;
+
     drawing = false;
 
+    // commit
     model.strokes.push(currentStroke);
     currentStroke = null;
   }
@@ -158,6 +169,7 @@ function attachInking(svg, model) {
   svg.addEventListener("pointerup", endStroke);
   svg.addEventListener("pointercancel", endStroke);
 }
+
 
 async function renderPdf(arrayBuffer) {
   pagesEl.innerHTML = "";
